@@ -6,9 +6,15 @@
 			"dependencies": ["<!(node -p \"require('node-addon-api').gyp\")"],
 			"include_dirs": [
 				"<!@(node -p \"require('node-addon-api').include\")",
-				"<!@(pkg-config --cflags-only-I libavfilter libavutil | sed 's/-I//g')"
+				"<!@(node -e \"process.stdout.write(process.env.FFMPEG_INCLUDE_DIR || '')\")"
 			],
-			"libraries": ["<!@(pkg-config --libs libavfilter libavutil)"],
+			"library_dirs": [
+				"<!@(node -e \"process.stdout.write(process.env.FFMPEG_LIB_DIR || '')\")"
+			],
+			"libraries": ["-lavfilter", "-lavutil", "-lswresample"],
+			"ldflags": [
+				"<!@(node -e \"const d=process.env.FFMPEG_LIB_DIR; process.stdout.write(d ? '-Wl,-rpath,'+d : '')\")"
+			],
 			"cflags_cc!": ["-fno-exceptions"]
 		}
 	]
