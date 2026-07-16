@@ -49,16 +49,21 @@ class Upmix : public Napi::ObjectWrap<Upmix> {
         sampleRate_ = opts.Get("sampleRate").As<Napi::Number>().Int32Value();
         bitDepth_ = opts.Get("bitDepth").As<Napi::Number>().Int32Value();
         inChannels_ = opts.Get("inputChannels").As<Napi::Number>().Int32Value();
-        inputLayout_ = opts.Get("inputLayout").As<Napi::String>().Utf8Value();
-        outputLayout_ = opts.Get("outputLayout").As<Napi::String>().Utf8Value();
-        winSize_ = opts.Get("winSize").As<Napi::Number>().Int32Value();
-        smooth_ = opts.Get("smooth").As<Napi::Number>().FloatValue();
-        angle_ = opts.Get("angle").As<Napi::Number>().FloatValue();
-        focus_ = opts.Get("focus").As<Napi::Number>().FloatValue();
-        lfe_ = opts.Get("lfe").As<Napi::Boolean>().Value();
-        lfeLow_ = opts.Get("lfeLow").As<Napi::Number>().Int32Value();
-        lfeHigh_ = opts.Get("lfeHigh").As<Napi::Number>().Int32Value();
-        lfeMode_ = opts.Get("lfeMode").As<Napi::String>().Utf8Value();
+
+        const std::string inputLayout =
+            opts.Get("inputLayout").As<Napi::String>().Utf8Value();
+        const std::string outputLayout =
+            opts.Get("outputLayout").As<Napi::String>().Utf8Value();
+        const int winSize = opts.Get("winSize").As<Napi::Number>().Int32Value();
+        const float smooth = opts.Get("smooth").As<Napi::Number>().FloatValue();
+        const float angle = opts.Get("angle").As<Napi::Number>().FloatValue();
+        const float focus = opts.Get("focus").As<Napi::Number>().FloatValue();
+        const bool lfe = opts.Get("lfe").As<Napi::Boolean>().Value();
+        const int lfeLow = opts.Get("lfeLow").As<Napi::Number>().Int32Value();
+        const int lfeHigh =
+            opts.Get("lfeHigh").As<Napi::Number>().Int32Value();
+        const std::string lfeMode =
+            opts.Get("lfeMode").As<Napi::String>().Utf8Value();
 
         if (bitDepth_ != 16 && bitDepth_ != 32) {
             Napi::RangeError::New(env, "bitDepth must be 16 or 32")
@@ -68,8 +73,23 @@ class Upmix : public Napi::ObjectWrap<Upmix> {
 
         nativeFmt_ = (bitDepth_ == 16) ? AV_SAMPLE_FMT_S16 : AV_SAMPLE_FMT_S32;
 
+        std::ostringstream bufArgs;
+        bufArgs << "sample_rate=" << sampleRate_
+                << ":sample_fmt=" << av_get_sample_fmt_name(nativeFmt_)
+                << ":channel_layout=" << inputLayout << ":time_base=1/"
+                << sampleRate_;
+        bufArgs_ = bufArgs.str();
+
+        std::ostringstream surroundArgs;
+        surroundArgs << "chl_out=" << outputLayout << ":chl_in=" << inputLayout
+                     << ":win_size=" << winSize << ":smooth=" << smooth
+                     << ":angle=" << angle << ":focus=" << focus
+                     << ":lfe=" << (lfe ? 1 : 0) << ":lfe_low=" << lfeLow
+                     << ":lfe_high=" << lfeHigh << ":lfe_mode=" << lfeMode;
+        surroundArgs_ = surroundArgs.str();
+
         try {
-            buildGraph(inputLayout_, outputLayout_, winSize_);
+            buildGraph();
         } catch (const std::exception &e) {
             Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
         }
@@ -86,16 +106,8 @@ class Upmix : public Napi::ObjectWrap<Upmix> {
     int bitDepth_ = 16;
     AVSampleFormat nativeFmt_ = AV_SAMPLE_FMT_S16;
     int inChannels_ = 2;
-    std::string inputLayout_;
-    std::string outputLayout_;
-    int winSize_ = 4096;
-    float smooth_ = 0.f;
-    float angle_ = 90.f;
-    float focus_ = 0.f;
-    bool lfe_ = true;
-    int lfeLow_ = 128;
-    int lfeHigh_ = 256;
-    std::string lfeMode_ = "add";
+    std::string bufArgs_;
+    std::string surroundArgs_;
 
     void freeGraph() {
         if (graph_ != nullptr) {
@@ -106,8 +118,7 @@ class Upmix : public Napi::ObjectWrap<Upmix> {
         }
     }
 
-    void buildGraph(const std::string &inputLayout,
-                    const std::string &outputLayout, int winSize) {
+    void buildGraph() {
         int ret;
 
         graph_ = avfilter_graph_alloc();
@@ -120,14 +131,8 @@ class Upmix : public Napi::ObjectWrap<Upmix> {
             throw std::runtime_error("abuffer filter not found");
         }
 
-        std::ostringstream bufArgs;
-        bufArgs << "sample_rate=" << sampleRate_
-                << ":sample_fmt=" << av_get_sample_fmt_name(nativeFmt_)
-                << ":channel_layout=" << inputLayout << ":time_base=1/"
-                << sampleRate_;
-
-        ret = avfilter_graph_create_filter(
-            &srcCtx_, abuffer, "in", bufArgs.str().c_str(), nullptr, graph_);
+        ret = avfilter_graph_create_filter(&srcCtx_, abuffer, "in",
+                                           bufArgs_.c_str(), nullptr, graph_);
         if (ret < 0) {
             freeGraph();
             throw std::runtime_error("Failed to create abuffer: " + avErr(ret));
@@ -139,17 +144,9 @@ class Upmix : public Napi::ObjectWrap<Upmix> {
             throw std::runtime_error("surround filter not found");
         }
 
-        std::ostringstream surroundArgs;
-        surroundArgs << "chl_out=" << outputLayout << ":chl_in=" << inputLayout
-                     << ":win_size=" << winSize << ":smooth=" << smooth_
-                     << ":angle=" << angle_ << ":focus=" << focus_
-                     << ":lfe=" << (lfe_ ? 1 : 0)
-                     << ":lfe_low=" << lfeLow_ << ":lfe_high=" << lfeHigh_
-                     << ":lfe_mode=" << lfeMode_;
-
         AVFilterContext *surroundCtx = nullptr;
         ret = avfilter_graph_create_filter(&surroundCtx, surround, "surround",
-                                           surroundArgs.str().c_str(), nullptr,
+                                           surroundArgs_.c_str(), nullptr,
                                            graph_);
         if (ret < 0) {
             freeGraph();
@@ -318,7 +315,7 @@ class Upmix : public Napi::ObjectWrap<Upmix> {
         Napi::Env env = info.Env();
         try {
             freeGraph();
-            buildGraph(inputLayout_, outputLayout_, winSize_);
+            buildGraph();
         } catch (const std::exception &e) {
             Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
         }
