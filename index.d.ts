@@ -4,6 +4,13 @@ export interface UpmixOptions {
 	inputLayout: string
 	outputLayout: 'stereo' | '5.1' | '7.1'
 	winSize: number
+	smooth: number
+	angle: number
+	focus: number
+	lfe: boolean
+	lfeLow: number
+	lfeHigh: number
+	lfeMode: 'add' | 'sub'
 }
 
 export declare class Upmix {

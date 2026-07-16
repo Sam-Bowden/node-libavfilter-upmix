@@ -52,6 +52,13 @@ class Upmix : public Napi::ObjectWrap<Upmix> {
         inputLayout_ = opts.Get("inputLayout").As<Napi::String>().Utf8Value();
         outputLayout_ = opts.Get("outputLayout").As<Napi::String>().Utf8Value();
         winSize_ = opts.Get("winSize").As<Napi::Number>().Int32Value();
+        smooth_ = opts.Get("smooth").As<Napi::Number>().FloatValue();
+        angle_ = opts.Get("angle").As<Napi::Number>().FloatValue();
+        focus_ = opts.Get("focus").As<Napi::Number>().FloatValue();
+        lfe_ = opts.Get("lfe").As<Napi::Boolean>().Value();
+        lfeLow_ = opts.Get("lfeLow").As<Napi::Number>().Int32Value();
+        lfeHigh_ = opts.Get("lfeHigh").As<Napi::Number>().Int32Value();
+        lfeMode_ = opts.Get("lfeMode").As<Napi::String>().Utf8Value();
 
         if (bitDepth_ != 16 && bitDepth_ != 32) {
             Napi::RangeError::New(env, "bitDepth must be 16 or 32")
@@ -82,6 +89,13 @@ class Upmix : public Napi::ObjectWrap<Upmix> {
     std::string inputLayout_;
     std::string outputLayout_;
     int winSize_ = 4096;
+    float smooth_ = 0.f;
+    float angle_ = 90.f;
+    float focus_ = 0.f;
+    bool lfe_ = true;
+    int lfeLow_ = 128;
+    int lfeHigh_ = 256;
+    std::string lfeMode_ = "add";
 
     void freeGraph() {
         if (graph_ != nullptr) {
@@ -127,7 +141,11 @@ class Upmix : public Napi::ObjectWrap<Upmix> {
 
         std::ostringstream surroundArgs;
         surroundArgs << "chl_out=" << outputLayout << ":chl_in=" << inputLayout
-                     << ":win_size=" << winSize;
+                     << ":win_size=" << winSize << ":smooth=" << smooth_
+                     << ":angle=" << angle_ << ":focus=" << focus_
+                     << ":lfe=" << (lfe_ ? 1 : 0)
+                     << ":lfe_low=" << lfeLow_ << ":lfe_high=" << lfeHigh_
+                     << ":lfe_mode=" << lfeMode_;
 
         AVFilterContext *surroundCtx = nullptr;
         ret = avfilter_graph_create_filter(&surroundCtx, surround, "surround",
