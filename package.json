@@ -1,6 +1,6 @@
 {
 	"name": "node-libavfilter-upmix",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Node.js native addon wrapping FFmpeg libavfilter's surround filter for audio upmixing",
 	"main": "index.js",
 	"types": "index.d.ts",
