@@ -1,0 +1,62 @@
+name: Build
+
+on:
+    workflow_dispatch:
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        container: rockylinux/rockylinux:9
+        permissions:
+            contents: write
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install build dependencies
+              run: dnf install -y gcc make nasm pkgconf-pkg-config git binutils tar xz jq
+
+            - name: Clone FFmpeg
+              run: git clone --depth 1 --branch n8.0.1 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+
+            - name: Configure
+              working-directory: ffmpeg
+              run: |
+                  ./configure \
+                      --prefix="$PWD/build" \
+                      --disable-everything \
+                      --disable-programs \
+                      --disable-doc \
+                      --disable-autodetect \
+                      --disable-static \
+                      --enable-shared \
+                      --enable-avfilter \
+                      --enable-avutil \
+                      --enable-filter=surround \
+                      --enable-filter=aformat \
+                      --enable-filter=aresample
+
+            - name: Build
+              working-directory: ffmpeg
+              run: make -j"$(nproc)" && make install
+
+            - name: Collect outputs
+              run: |
+                  mkdir -p dist
+                  for lib in avfilter avutil swresample; do
+                      soname=$(readelf -d "ffmpeg/build/lib/lib$lib.so" | sed -n 's/.*SONAME.*\[\(.*\)\]/\1/p')
+                      cp -L "ffmpeg/build/lib/$soname" "dist/$soname"
+                  done
+                  tar -cJf dist/include.tar.xz -C ffmpeg/build include
+                  ls -l dist
+
+            - name: Read version
+              id: version
+              run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+            - name: Create release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ steps.version.outputs.version }}
+                  name: ${{ steps.version.outputs.version }}
+                  files: dist/*
+                  fail_on_unmatched_files: true
